@@ -300,7 +300,7 @@ with st.sidebar:
     st.markdown("---")
     st.markdown("""
     **Chess AI Arena**  
-    Two **Gemini 2.5** agents battle it out.  
+    Two **Gemini 2.5 Flash Lite** agents battle it out.  
     Moderated by **AutoGen**.
     """)
     if gemini_api_key:
@@ -330,11 +330,11 @@ with main_col1:
     st.markdown("""
     <div class="agent-header">
         <div class="agent-name">
-            <span>⚪</span> White (Gemini 2.5)
+            <span>⚪</span> White (Gemini 2.5 Flash Lite)
         </div>
         <div class="agent-vs">VS</div>
         <div class="agent-name">
-            <span>⚫</span> Black (Gemini 2.5)
+            <span>⚫</span> Black (Gemini 2.5 Flash Lite)
         </div>
     </div>
     """, unsafe_allow_html=True)
@@ -410,14 +410,44 @@ if start_btn:
 
     # Agents
     try:
-        config_list = [{"model": "gemini-2.5-flash", "api_key": gemini_api_key, "api_type": "google"}]
+        safety_settings = [
+            {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
+            {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
+            {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
+            {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
+        ]
+        
+        config_list = [
+            {
+                "model": "gemini-2.5-flash-lite", 
+                "api_key": gemini_api_key, 
+                "api_type": "google",
+                "safety_settings": safety_settings
+            }
+        ]
         
         def check_game_over(msg):
             return st.session_state.board.is_game_over()
 
+        system_message_white = """You are a Chess Grandmaster playing as White.
+Your goal is to win the game.
+Always follow this sequence:
+1. Call available_moves() to see all legal moves in UCI format.
+2. Analyze the board and choose the best move.
+3. Call execute_move(move='<your_move>') with the chosen UCI move.
+Do not provide any other commentary or moves outside of this sequence. Be aggressive and precise."""
+
+        system_message_black = """You are a Chess Grandmaster playing as Black.
+Your goal is to win the game.
+Always follow this sequence:
+1. Call available_moves() to see all legal moves in UCI format.
+2. Analyze the board and choose the best move.
+3. Call execute_move(move='<your_move>') with the chosen UCI move.
+Do not provide any other commentary or moves outside of this sequence. Be aggressive and precise."""
+
         agent_white = ConversableAgent(
             name="White_Player",
-            system_message="You are a Chess Grandmaster playing White. Analyze the board. Win the game. You MUST call available_moves() first, then pick the best move and call execute_move(move).",
+            system_message=system_message_white,
             llm_config={"config_list": config_list},
             human_input_mode="NEVER",
             is_termination_msg=check_game_over,
@@ -426,7 +456,7 @@ if start_btn:
         
         agent_black = ConversableAgent(
             name="Black_Player",
-            system_message="You are a Chess Grandmaster playing Black. Analyze the board. Win the game. You MUST call available_moves() first, then pick the best move and call execute_move(move).",
+            system_message=system_message_black,
             llm_config={"config_list": config_list},
             human_input_mode="NEVER",
             is_termination_msg=check_game_over,

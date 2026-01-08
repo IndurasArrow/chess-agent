@@ -1,30 +1,21 @@
-# ♟️ AI Chess Agent Arena (Powered by Gemini 2.5)
+# ♟️ AI Chess Agent Arena (Powered by Gemini 2.5 Flash Lite)
 
-A multi-agent AI system where two **Google Gemini 2.5** agents play chess against each other, managed by a proxy Game Master for rule validation. Built with **AutoGen** and **Streamlit**.
-
-## 🏗️ Architecture
-
-This project demonstrates an **Autonomous Multi-Agent System**:
-
-- **Agent White (Gemini):** Strategic decision-maker.
-- **Agent Black (Gemini):** Tactical opponent.
-- **Game Master (Proxy):** A deterministic agent that validates moves using the `python-chess` library and prevents hallucinations.
+A multi-agent AI system where two **Google Gemini 2.5 Flash Lite** agents play chess against each other, managed by a proxy Game Master for rule validation. Built with **AutoGen** and **Streamlit**.
 
 ## 🚀 Features
-
-- **Interactive Game Replay:** Navigate through the entire game history with a slider to analyze every move.
-- **Modern UI:** A polished, dark-themed dashboard with card-based layout and responsive design.
-- **Visual Gameplay:** High-quality SVG board rendering for crisp visuals at any size.
-- **Robust Validation:** Prevents AI "hallucinations" (illegal moves) via a strict rule engine.
-- **Secure:** API keys are handled via environment secrets, not hardcoded.
-- **Move History:** Full tracking of the game state and moves.
+- **Dual AI Agents:**
+    - **Agent White (Gemini):** Strategic decision-maker.
+    - **Agent Black (Gemini):** Tactical opponent.
+- **Game Master (Arbiter):** A proxy agent that validates moves using the `python-chess` library and ensures rule compliance.
+- **Live Visualization:** Real-time chess board rendering with move highlighting.
+- **Move History & Replay:** Scrub through the game timeline with an interactive slider.
+- **Modern UI:** Clean, dark-themed dashboard built with Streamlit.
 
 ## 🛠️ Tech Stack
-
-- **Framework:** Streamlit
-- **Orchestration:** Microsoft AutoGen
-- **LLM:** Google Gemini 2.5 Flash
-- **Game Engine:** Python-Chess
+- **Framework:** [AutoGen](https://microsoft.github.io/autogen/)
+- **LLM:** Google Gemini 2.5 Flash Lite
+- **Frontend:** Streamlit
+- **Chess Logic:** python-chess
 
 ## 💻 How to Run Locally
 
