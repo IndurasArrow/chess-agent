@@ -3,7 +3,7 @@ import time
 import chess
 import chess.svg
 import streamlit as st
-from autogen import ConversableAgent, register_function
+from autogen import ConversableAgent, register_function, GroupChat, GroupChatManager
 from dotenv import load_dotenv
 
 # --- Load Environment Variables ---
@@ -227,16 +227,18 @@ def available_moves() -> str:
     return "Available moves are: " + ",".join(available_moves)
 
 def execute_move(move: str) -> str:
-    time.sleep(0.4)
+    time.sleep(0.5)  # Slightly longer for better visibility
     try:
         chess_move = chess.Move.from_uci(move)
         if chess_move not in st.session_state.board.legal_moves:
             return f"Invalid move: {move}. Please call available_moves() to see valid moves."
         
+        # Track mover BEFORE pushing the move
+        mover_color = "⚪ White" if st.session_state.board.turn == chess.WHITE else "⚫ Black"
+        
         st.session_state.board.push(chess_move)
         st.session_state.made_move = True
 
-        # Highlighting and colors
         # Last move highlight color - Electric Blue
         fill_colors = {chess_move.from_square: "#3B82F6AA", chess_move.to_square: "#3B82F6AA"}
         
@@ -263,8 +265,6 @@ def execute_move(move: str) -> str:
         from_sq = chess.SQUARE_NAMES[chess_move.from_square]
         to_sq = chess.SQUARE_NAMES[chess_move.to_square]
         
-        mover_color = "⚪ White" if st.session_state.board.turn == chess.BLACK else "⚫ Black"
-        
         move_desc = f"**{mover_color}** moves **{piece_name}** ({piece_unicode}) from `{from_sq}` to `{to_sq}`"
         
         if st.session_state.board.is_checkmate():
@@ -276,22 +276,25 @@ def execute_move(move: str) -> str:
 
         st.session_state.move_descriptions.append(move_desc)
 
-        # --- Live Update for Board ---
+        # --- Live Update for Board & Log ---
+        # We use st.session_state.board_spot.container() to ensure multiple elements are handled correctly
         if "board_spot" in st.session_state:
             with st.session_state.board_spot.container():
                 st.markdown(f'<div style="display: flex; justify-content: center; margin: 20px 0;">{board_svg}</div>', unsafe_allow_html=True)
-                st.caption(move_desc)
+                st.markdown(f"<div style='text-align: center; color: #94A3B8;'>{move_desc}</div>", unsafe_allow_html=True)
+        
+        if "log_spot" in st.session_state:
+            with st.session_state.log_spot.container():
+                log_html = '<div class="game-log">'
+                for desc in reversed(st.session_state.move_descriptions):
+                    log_html += f'<div class="log-entry">{desc}</div>'
+                log_html += '</div>'
+                st.markdown(log_html, unsafe_allow_html=True)
 
         return move_desc
 
-    except ValueError:
-        return f"Invalid move format: {move}. Use UCI (e.g., 'e2e4')."
-
-def check_made_move(msg):
-    if st.session_state.made_move:
-        st.session_state.made_move = False
-        return True
-    return False
+    except Exception as e:
+        return f"Error executing move {move}: {str(e)}"
 
 # --- Sidebar (Configuration only) ---
 with st.sidebar:
@@ -362,13 +365,17 @@ with main_col2:
     st.markdown('<div class="stCard">', unsafe_allow_html=True)
     st.subheader("📜 Match Log")
     
+    log_spot = st.empty()
+    st.session_state.log_spot = log_spot
+
     if st.session_state.move_descriptions:
-        # Show last 5 moves or scrollable area
-        log_html = '<div class="game-log">'
-        for desc in reversed(st.session_state.move_descriptions):
-            log_html += f'<div class="log-entry">{desc}</div>'
-        log_html += '</div>'
-        st.markdown(log_html, unsafe_allow_html=True)
+        with log_spot:
+            # Show last 5 moves or scrollable area
+            log_html = '<div class="game-log">'
+            for desc in reversed(st.session_state.move_descriptions):
+                log_html += f'<div class="log-entry">{desc}</div>'
+            log_html += '</div>'
+            st.markdown(log_html, unsafe_allow_html=True)
     else:
         st.info("Waiting for game to start...")
     
@@ -404,7 +411,7 @@ if start_btn:
     st.session_state.move_descriptions.append("🏁 **Game Start**")
     
     # Render Initial Board
-    with board_spot.container():
+    with board_spot:
         render_svg(initial_svg)
         st.markdown("<div style='text-align: center; color: #94A3B8;'>Game Starting...</div>", unsafe_allow_html=True)
 
@@ -451,7 +458,6 @@ Do not provide any other commentary or moves outside of this sequence. Be aggres
             llm_config={"config_list": config_list},
             human_input_mode="NEVER",
             is_termination_msg=check_game_over,
-            max_consecutive_auto_reply=500
         )
         
         agent_black = ConversableAgent(
@@ -460,31 +466,57 @@ Do not provide any other commentary or moves outside of this sequence. Be aggres
             llm_config={"config_list": config_list},
             human_input_mode="NEVER",
             is_termination_msg=check_game_over,
-            max_consecutive_auto_reply=500
         )
         
         game_master = ConversableAgent(
             name="Arbiter",
+            system_message="You are the Arbiter. Your job is to execute moves and manage the game state. When a player makes a move, confirm it and state whose turn it is.",
             llm_config=False,
-            is_termination_msg=check_made_move,
+            is_termination_msg=check_game_over,
             default_auto_reply="Move accepted. Next player.",
             human_input_mode="NEVER",
-            max_consecutive_auto_reply=500
         )
         
         for p in [agent_white, agent_black]:
             register_function(execute_move, caller=p, executor=game_master, name="execute_move", description="Execute a chess move in UCI format.")
             register_function(available_moves, caller=p, executor=game_master, name="available_moves", description="Get list of legal moves.")
 
-        # Handoffs
-        agent_white.register_nested_chats(trigger=agent_black, chat_queue=[{"sender": game_master, "recipient": agent_white, "summary_method": "last_msg"}])
-        agent_black.register_nested_chats(trigger=agent_white, chat_queue=[{"sender": game_master, "recipient": agent_black, "summary_method": "last_msg"}])
+        def custom_speaker_selection(last_speaker, groupchat):
+            messages = groupchat.messages
+            if not messages:
+                return agent_white
+                
+            last_msg = messages[-1]
+            
+            # If there's a tool call, Arbiter must execute it
+            if "tool_calls" in last_msg:
+                return game_master
+                
+            # If the last message was from Arbiter (tool result or acknowledgement)
+            if last_speaker == game_master:
+                if st.session_state.board.turn == chess.WHITE:
+                    return agent_white
+                else:
+                    return agent_black
+            
+            # If a player just spoke but didn't call a tool, Arbiter should acknowledge
+            return game_master
+
+        groupchat = GroupChat(
+            agents=[agent_white, agent_black, game_master],
+            messages=[],
+            max_round=500,
+            speaker_selection_method=custom_speaker_selection,
+        )
+        
+        manager = GroupChatManager(groupchat=groupchat, llm_config=None)
 
         with main_col2:
             with st.status("🧠 Agents are strategizing...", expanded=True) as status:
-                agent_black.initiate_chat(
-                    recipient=agent_white,
-                    message="Game started. White to move.",
+                # White starts the game
+                game_master.initiate_chat(
+                    recipient=manager,
+                    message="The game has started. White, please make your first move.",
                     max_turns=None,
                     summary_method="last_msg"
                 )
@@ -496,7 +528,7 @@ Do not provide any other commentary or moves outside of this sequence. Be aggres
 # --- Final Board Visualization (Replay/Static) ---
 # This runs after the game logic or on normal re-runs
 if st.session_state.move_history:
-    with board_spot.container():
+    with board_spot:
         # Replay Slider
         max_idx = len(st.session_state.move_history) - 1
         curr_idx = st.slider("Timeline", 0, max_idx, max_idx, key="board_slider", label_visibility="collapsed")
@@ -514,7 +546,7 @@ else:
     # Wait, if Start Game runs, move_history is populated, so the `if` block above runs.
     # If Start Game is NOT running, and move_history is empty, this runs.
     
-    with board_spot.container():
+    with board_spot:
         empty_svg = chess.svg.board(
             chess.Board(), 
             size=450, 
